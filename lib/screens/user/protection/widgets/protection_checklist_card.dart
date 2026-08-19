@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 
 /// Static "what's covered" list. Deliberately has no per-item toggles —
-/// these categories are always protected, unlike the specific named
-/// sites/apps managed further down the Protection screen.
+/// these categories are covered automatically by Sawatâ's global gambling
+/// database (`blocked_packages`/`blocked_domains`) once Protection Lock is
+/// on, with no manual setup required. `BlockedSitesScreen` is a separate,
+/// optional list for *additional* items the user personally wants blocked.
+/// Only lists categories the blocking mechanism (package/domain matching)
+/// can actually enforce — no ad-blocking or content-classification exists
+/// in this app, so those aren't listed here even though they're common
+/// gambling-blocker marketing claims.
 class ProtectionChecklistCard extends StatelessWidget {
   const ProtectionChecklistCard({super.key});
 
@@ -15,8 +21,6 @@ class ProtectionChecklistCard extends StatelessWidget {
     'Lottery Websites',
     'Crypto Gambling',
     'Mirror Websites',
-    'Betting Advertisements',
-    'AI-Detected Gambling Content',
   ];
 
   @override
@@ -37,7 +41,9 @@ class ProtectionChecklistCard extends StatelessWidget {
             ),
             const SizedBox(height: 3),
             Text(
-              'No toggles, no switches — everything below is protected automatically.',
+              'Automatically blocked once Protection Lock is on — no need '
+              'to add these yourself. Want to block something extra, like '
+              'a specific app or site? Use Blocked Sites & Apps.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),

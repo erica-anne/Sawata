@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">Sawata uses this to detect when you open a gambling app you\'ve asked it to block, so it can immediately send you back to your Home screen. It does not read on-screen content - only which app is currently open.</string>
+</resources>

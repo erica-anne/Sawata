@@ -8,6 +8,7 @@ class BlockedItem {
     required this.icon,
     required this.isBlocked,
     this.isCustom = false,
+    this.packageName,
   });
 
   final String id;
@@ -17,22 +18,25 @@ class BlockedItem {
   bool isBlocked;
 
   /// True for sites/apps the user added themselves, as opposed to the
-  /// curated default list Sawatâ ships with. Only custom items can be
-  /// edited or removed — the default list can only be toggled.
+  /// curated default list Sawatâ used to ship with (that seeded list is
+  /// retired — see UserDataService.ensureInitialized — so every item a user
+  /// can currently have is custom).
   final bool isCustom;
+
+  /// The real Android package name (e.g. `com.example.betapp`), required for
+  /// `category == 'App'` entries. Read directly from this user's own
+  /// `blocked_items` doc by the Accessibility Service (unioned with
+  /// Sawatâ's global default blocklist in `blocked_packages`) to match
+  /// against. Null for website entries, which aren't package-blockable.
+  String? packageName;
 }
 
-/// Fixed set of categories a user can file a custom blocked site/app under,
-/// each with a matching icon so entries don't need a separate icon picker.
-const blockedItemCategories = <String>[
-  'Online Casino',
-  'Sports Betting',
-  'Poker',
-  'Slots',
-  'App',
-  'Website',
-];
-
+/// [iconForBlockedCategory] still handles the old granular categories
+/// ('Online Casino', 'Sports Betting', 'Poker', 'Slots') so any item added
+/// before the Blocked Sites & Apps redesign still renders a sensible icon —
+/// new adds only ever use 'App' or 'Website' (see AddBlockedItemSheet),
+/// which is why there's no longer a matching category picker/constant list
+/// in the UI.
 IconData iconForBlockedCategory(String category) {
   switch (category) {
     case 'Online Casino':

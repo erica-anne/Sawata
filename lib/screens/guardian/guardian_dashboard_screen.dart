@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:sawata/app/routes.dart';
 import 'package:sawata/data/dummy_data_store.dart';
+import 'package:sawata/models/blocked_item.dart';
 import 'package:sawata/widgets/snackbar_helper.dart';
 
 import 'widgets/guardian_bottom_nav.dart';
@@ -9,7 +10,6 @@ import 'widgets/guardian_header.dart';
 import 'widgets/guardian_stat_card.dart';
 import 'widgets/live_alert_card.dart';
 import 'widgets/recent_guardian_activity_card.dart';
-import 'widgets/send_encouragement_card.dart';
 import 'widgets/streak_status_hero.dart';
 import 'widgets/user_switcher_chip.dart';
 
@@ -65,6 +65,25 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> {
         .length;
   }
 
+  bool _isToday(DateTime time) {
+    final now = DateTime.now();
+    return time.year == now.year &&
+        time.month == now.month &&
+        time.day == now.day;
+  }
+
+  GuardianActivityItem _activityItem(BlockAttempt attempt) {
+    final isApp = attempt.category == 'App';
+    return GuardianActivityItem(
+      icon: attempt.icon,
+      iconColor: isApp ? const Color(0xFFB07A1E) : const Color(0xFF3B6FE0),
+      iconBg: isApp ? const Color(0xFFFCEFD2) : const Color(0xFFE3ECFB),
+      title: 'Blocked ${attempt.category.toLowerCase()}',
+      subtitle: attempt.itemName,
+      time: _formatTime(attempt.time),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
@@ -77,6 +96,9 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> {
 
     final todayCount = _attemptsOn(now);
     final yesterdayCount = _attemptsOn(now.subtract(const Duration(days: 1)));
+    final latestAttempt = store.recentAttempts.isEmpty
+        ? null
+        : store.recentAttempts.first;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4FAF7),
@@ -85,7 +107,7 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> {
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
           children: [
             GuardianHeader(
-              notificationCount: 2,
+              notificationCount: store.pendingGuardianInvites,
               onBellTap: () =>
                   Navigator.of(context).pushReplacementNamed(
                     AppRoutes.guardianAlerts,
@@ -122,16 +144,21 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> {
                 UserSwitcherChip(name: linkedUserName),
               ],
             ),
-            const SizedBox(height: 18),
-            LiveAlertCard(
-              title: 'Uninstall Attempt Detected',
-              description:
-                  '${linkedUserName.split(' ').first} tried to delete the Sawatâ app from his device.',
-              timestamp: 'Today, ${_formatTime(now)}',
-              statusLabel: 'Action Detected',
-              onTap: () =>
-                  showAppSnackBar(context, 'Alert details coming soon'),
-            ),
+            if (latestAttempt != null) ...[
+              const SizedBox(height: 18),
+              LiveAlertCard(
+                title: 'Blocked Attempt Detected',
+                description:
+                    "${linkedUserName.split(' ').first} tried to access "
+                    '${latestAttempt.itemName}.',
+                timestamp: _isToday(latestAttempt.time)
+                    ? 'Today, ${_formatTime(latestAttempt.time)}'
+                    : _formatDate(latestAttempt.time),
+                statusLabel: 'Blocked',
+                onTap: () =>
+                    showAppSnackBar(context, 'Alert details coming soon'),
+              ),
+            ],
             const SizedBox(height: 18),
             StreakStatusHero(
               streakDays: store.streakDays,
@@ -148,7 +175,7 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> {
                     icon: Icons.shield_outlined,
                     iconColor: const Color(0xFF2E7D6B),
                     iconBg: const Color(0xFFDDEEE7),
-                    label: "Today's Uninstall Attempts",
+                    label: "Today's Blocked Attempts",
                     value: '$todayCount',
                     unit: '',
                     caption: 'vs yesterday',
@@ -172,54 +199,25 @@ class _GuardianDashboardScreenState extends State<GuardianDashboardScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            RecentGuardianActivityCard(
-              onViewAll: () =>
-                  showAppSnackBar(context, 'Full activity log coming soon'),
-              items: [
-                GuardianActivityItem(
-                  icon: Icons.delete_outline,
-                  iconColor: const Color(0xFFC0392B),
-                  iconBg: const Color(0xFFFBE7E4),
-                  title: 'Uninstall attempt detected',
-                  subtitle:
-                      '${linkedUserName.split(' ').first} tried to delete the Sawatâ app.',
-                  time: 'Just now',
-                  isUrgent: true,
+            if (store.recentAttempts.isEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                GuardianActivityItem(
-                  icon: Icons.language,
-                  iconColor: const Color(0xFFB07A1E),
-                  iconBg: const Color(0xFFFCEFD2),
-                  title: 'Blocked gambling website',
-                  subtitle: 'bet88.com',
-                  time: _formatTime(now.subtract(const Duration(minutes: 5))),
+                alignment: Alignment.center,
+                child: const Text(
+                  'No recent activity yet.',
+                  style: TextStyle(color: Color(0xFF5B7269)),
                 ),
-                GuardianActivityItem(
-                  icon: Icons.shield_outlined,
-                  iconColor: const Color(0xFF3B6FE0),
-                  iconBg: const Color(0xFFE3ECFB),
-                  title: 'Multiple blocked attempts',
-                  subtitle: '5 attempts in the last hour',
-                  time: _formatTime(
-                    now.subtract(const Duration(hours: 1, minutes: 26)),
-                  ),
-                ),
-                GuardianActivityItem(
-                  icon: Icons.star_outline,
-                  iconColor: const Color(0xFF2E7D6B),
-                  iconBg: const Color(0xFFDDEEE7),
-                  title: 'Milestone reached!',
-                  subtitle:
-                      '${linkedUserName.split(' ').first} reached 20 days of recovery.',
-                  time: 'Yesterday',
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            SendEncouragementCard(
-              onViewAll: () =>
-                  showAppSnackBar(context, 'Message history coming soon'),
-            ),
+              )
+            else
+              RecentGuardianActivityCard(
+                onViewAll: () =>
+                    showAppSnackBar(context, 'Full activity log coming soon'),
+                items: store.recentAttempts.take(4).map(_activityItem).toList(),
+              ),
           ],
         ),
       ),

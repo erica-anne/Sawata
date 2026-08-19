@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:sawata/app/routes.dart';
 import 'package:sawata/data/dummy_data_store.dart';
+import 'package:sawata/models/blocked_item.dart';
 import 'package:sawata/widgets/snackbar_helper.dart';
 
 import 'widgets/alert_card.dart';
@@ -33,41 +34,20 @@ class _GuardianAlertsScreenState extends State<GuardianAlertsScreen> {
     return '$hour12:$minute $ampm';
   }
 
+  AlertItem _alertItem(BlockAttempt attempt) {
+    final isApp = attempt.category == 'App';
+    return AlertItem(
+      icon: attempt.icon,
+      title: isApp ? 'Gambling App Blocked' : 'Gambling Website Blocked',
+      description: 'Blocked: ${attempt.itemName}',
+      category: isApp ? AlertCategory.apps : AlertCategory.websites,
+      time: _formatTime(attempt.time),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final firstName = store.profile.name.split(' ').first;
-
-    final alerts = <AlertItem>[
-      AlertItem(
-        icon: Icons.delete_outline,
-        title: 'Uninstall Attempt',
-        description: '$firstName attempted to uninstall Sawatâ.',
-        category: AlertCategory.critical,
-        time: _formatTime(now),
-      ),
-      AlertItem(
-        icon: Icons.file_download_outlined,
-        title: 'Gambling App Installation',
-        description: 'Attempted to install Bet88.',
-        category: AlertCategory.apps,
-        time: _formatTime(now.subtract(const Duration(hours: 1, minutes: 29))),
-      ),
-      AlertItem(
-        icon: Icons.language,
-        title: 'Gambling Website Blocked',
-        description: 'Blocked: bet365.com',
-        category: AlertCategory.websites,
-        time: _formatTime(now.subtract(const Duration(hours: 3, minutes: 4))),
-      ),
-      AlertItem(
-        icon: Icons.shield_outlined,
-        title: 'High Risk Activity',
-        description: '12 blocked attempts in 1 hour.',
-        category: AlertCategory.critical,
-        time: _formatTime(now.subtract(const Duration(hours: 3, minutes: 39))),
-      ),
-    ];
+    final alerts = store.recentAttempts.map(_alertItem).toList();
 
     final visibleAlerts = _selectedCategory == null
         ? alerts
@@ -79,7 +59,10 @@ class _GuardianAlertsScreenState extends State<GuardianAlertsScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
           children: [
-            GuardianHeader(notificationCount: 2, onBellTap: () {}),
+            GuardianHeader(
+              notificationCount: store.pendingGuardianInvites,
+              onBellTap: () {},
+            ),
             const SizedBox(height: 18),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,

@@ -1,0 +1,147 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+      match /blocked_items/{itemId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // Pending/dismissed gambling-app suggestions written by
+      // SawataAccessibilityService.maybeSuggestPackage() when a newly
+      // opened, not-yet-blocked app matches GamblingKeywords. Owner-only,
+      // same as blocked_items.
+      match /suggestions/{packageName} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // Private journal entries — owner-only, same shape as blocked_items.
+      match /journal_entries/{entryId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // This user's own AI gambling-detection results for apps/domains —
+      // written natively by AppClassificationWorker/DomainClassificationWorker
+      // (android/app/.../ai/). Deliberately per-user, owner-only: this is
+      // NOT a shared/trusted cross-user cache — see the top-level
+      // ai_candidates collection below for the (separate, review-only,
+      // non-enforcing) global record. SawataAccessibilityService/
+      // DomainBlocklist only ever read a signed-in user's own subcollection
+      // here to decide that user's effective block set.
+      match /ai_app_detections/{packageName} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+      match /ai_domain_detections/{domain} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // One doc per accepted guardian relationship for this protege (uid).
+      // Written by GuardianInvitesScreen._confirm() -> GuardianService.acceptInvite
+      // when a guardian accepts an invite. Read by the protege's own
+      // Guardian Contact screen (GuardianService.streamGuardians) and by
+      // security-alert email logic (GuardianService.fetchGuardians).
+      match /guardians/{guardianUid} {
+        // Only the protege who owns this relationship can read it.
+        allow read: if request.auth != null && request.auth.uid == uid;
+
+        // A guardian may only write their OWN relationship doc
+        // (guardianUid must equal their auth uid), and only by referencing
+        // a real invites/{inviteId} document that:
+        //   - was actually sent by this protege (fromUid == uid), and
+        //   - was addressed to this guardian's own verified sign-in email
+        //     (toEmail == request.auth.token.email).
+        // This stops an arbitrary authenticated user from writing
+        // themselves in as someone else's guardian just by guessing a uid.
+        allow write: if request.auth != null &&
+          request.auth.uid == guardianUid &&
+          request.resource.data.email == request.auth.token.email &&
+          request.resource.data.inviteId is string &&
+          get(/databases/$(database)/documents/invites/$(request.resource.data.inviteId)).data.fromUid == uid &&
+          get(/databases/$(database)/documents/invites/$(request.resource.data.inviteId)).data.toEmail == request.auth.token.email;
+      }
+    }
+    // Sawatâ's curated global default blocklist (known gambling/illegal
+    // apps) — same pattern as app_config/gambling_keywords below: readable
+    // by any signed-in client so the native blocker can subscribe, but
+    // admin-only write, maintained by hand via the Firestore console (the
+    // console/Admin SDK bypasses these rules entirely, so this doesn't
+    // block that workflow). A user's own custom app blocks live in
+    // users/{uid}/blocked_items instead, never in this collection.
+    match /blocked_packages/{packageName} {
+      allow read: if request.auth != null;
+    }
+    // Same as blocked_packages, for websites. A user's own custom website
+    // blocks live in users/{uid}/blocked_items instead.
+    match /blocked_domains/{domain} {
+      allow read: if request.auth != null;
+    }
+    // Curated keyword list read by GamblingKeywords.kt (single doc:
+    // app_config/gambling_keywords, field `keywords: string[]`). Admin-only
+    // write — maintained by hand via the Firestore console.
+    match /app_config/{docId} {
+      allow read: if request.auth != null;
+    }
+    // Global write-only-by-owner queue of AI-flagged gambling candidates,
+    // for later manual/admin review before anything gets promoted into
+    // blocked_packages/blocked_domains. NOT an enforcement cache: no
+    // enforcement code (native or Dart) ever reads this collection — the
+    // effective block set only ever comes from a user's own
+    // ai_app_detections/ai_domain_detections (above). No client read/
+    // update/delete at all, so a report can never be overwritten or scraped
+    // cross-user; only genuinely "gambling" classifications get written
+    // here at all (AppClassificationWorker/DomainClassificationWorker never
+    // write not_gambling/uncertain results into this collection), which the
+    // classification==\'gambling\' check below also enforces server-side.
+    match /ai_candidates/{candidateId} {
+      allow create: if request.auth != null &&
+        request.resource.data.reportedByUid == request.auth.uid &&
+        request.resource.data.classification == 'gambling' &&
+        request.resource.data.type in ['app', 'domain'] &&
+        request.resource.data.confidence is number &&
+        request.resource.data.confidence >= 0 &&
+        request.resource.data.confidence <= 1 &&
+        request.resource.data.key is string && request.resource.data.key.size() > 0 &&
+        request.resource.data.name is string &&
+        request.resource.data.reason is string &&
+        request.resource.data.model is string &&
+        request.resource.data.classifierVersion is string &&
+        request.resource.data.keys().hasOnly([
+          'type', 'key', 'name', 'classification', 'confidence', 'reason',
+          'reportedByUid', 'model', 'classifierVersion', 'detectedAt'
+        ]);
+    }
+    match /blocked_attempts/{attemptId} {
+      allow read: if request.auth != null &&
+        (resource.data.uid == request.auth.uid || resource.data.guardianUid == request.auth.uid);
+      allow create: if request.auth != null;
+    }
+    match /invites/{inviteId} {
+      allow read, write: if request.auth != null;
+    }
+    // Append-only send log written by EmailService._logEmail() and queried
+    // by EmailService._fetchRecentSendTimestamps() for rate limiting.
+    //
+    // create is owner-scoped: the doc must be attributed (via `userId`) to
+    // the signed-in user who triggered the send, so one authenticated user
+    // can't write a log entry claiming to be someone else.
+    //
+    // read stays any-authenticated-user rather than owner-scoped, because
+    // _fetchRecentSendTimestamps() rate-limits by RECIPIENT across
+    // *different* senders (e.g. two different proteges could each invite
+    // the same guardian email, and both sends should count against that
+    // recipient's limit) — its query filters on `recipient`/`emailType`/
+    // `timestamp` only, with no `userId` filter. Firestore rejects an
+    // entire query outright if a rule references a field the query doesn't
+    // also filter on, so `resource.data.userId == request.auth.uid` here
+    // would break that query (and there's no deployed composite index for
+    // a userId-filtered version of it) rather than just narrowing its
+    // results. No update/delete: the app never modifies or removes a log
+    // entry once written.
+    match /email_logs/{logId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null &&
+        request.resource.data.userId == request.auth.uid;
+    }
+  }
+}

@@ -62,7 +62,7 @@ class _GuardianSettingsScreenState extends State<GuardianSettingsScreen> {
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
           children: [
             GuardianHeader(
-              notificationCount: 2,
+              notificationCount: store.pendingGuardianInvites,
               onBellTap: () => Navigator.of(
                 context,
               ).pushReplacementNamed(AppRoutes.guardianAlerts),

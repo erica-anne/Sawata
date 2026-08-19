@@ -5,11 +5,17 @@ class GuardianInvite {
     required this.name,
     required this.avatarColor,
     required this.dateLabel,
+    this.isFromCurrentUser = false,
   });
 
   final String name;
   final Color avatarColor;
   final String dateLabel;
+
+  /// True when this card represents the real invite tracked in
+  /// `AppStore.myGuardianInvite` (the person using the User side of this
+  /// app session), rather than one of the flavor/demo requests.
+  final bool isFromCurrentUser;
 }
 
 /// A single pending invite row on the "Request" tab: who invited you, when,

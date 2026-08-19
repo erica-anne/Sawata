@@ -10,12 +10,20 @@ import '../screens/user/auth/register_screen.dart';
 import '../screens/user/guardian_contact/guardian_contact_screen.dart';
 import '../screens/user/guardian_onboarding/add_guardian_screen.dart';
 import '../screens/user/onboarding/onboarding_screen.dart';
+import '../screens/user/protection/blocked_sites_screen.dart';
+import '../screens/user/protection/protection_settings_screen.dart';
+import '../screens/user/protection/website_protection_screen.dart';
 import '../screens/user/settings/settings_screen.dart';
 import '../screens/user/splash/splash_screen.dart';
 import 'app_shell.dart';
 
 class AppRoutes {
   AppRoutes._();
+
+  /// Attached to [MaterialApp] in app.dart. Lets code outside the widget
+  /// tree — currently only [DeepLinkService] — navigate in response to a
+  /// `sawata://guardian-invites` link without needing a [BuildContext].
+  static final navigatorKey = GlobalKey<NavigatorState>();
 
   static const splash = '/splash';
   static const onboarding = '/onboarding';
@@ -46,6 +54,18 @@ class AppRoutes {
 
   /// The Guardian-side settings screen.
   static const guardianSettings = '/guardian-settings';
+
+  /// The DNS-level website-blocking enable/disable screen, reached from the
+  /// Protection tab's "Website Protection" row.
+  static const websiteProtection = '/website-protection';
+
+  /// The static "what's protected" info screen, reached from the Protection
+  /// tab's "Protection Settings" row.
+  static const protectionSettings = '/protection-settings';
+
+  /// The blocked sites/apps manager, reached from the Protection tab's
+  /// "Blocked Sites & Apps" row.
+  static const blockedSites = '/blocked-sites';
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -79,6 +99,16 @@ class AppRoutes {
         return MaterialPageRoute(
           builder: (_) => const GuardianSettingsScreen(),
         );
+      case websiteProtection:
+        return MaterialPageRoute(
+          builder: (_) => const WebsiteProtectionScreen(),
+        );
+      case protectionSettings:
+        return MaterialPageRoute(
+          builder: (_) => const ProtectionSettingsScreen(),
+        );
+      case blockedSites:
+        return MaterialPageRoute(builder: (_) => const BlockedSitesScreen());
       default:
         return MaterialPageRoute(builder: (_) => const SplashScreen());
     }

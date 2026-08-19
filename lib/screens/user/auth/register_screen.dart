@@ -1,7 +1,11 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import 'package:sawata/app/routes.dart';
-import 'package:sawata/widgets/apple_sign_in_button.dart';
+import 'package:sawata/services/auth_email_service.dart';
+import 'package:sawata/services/user_data_service.dart';
 import 'package:sawata/widgets/google_sign_in_button.dart';
 import 'package:sawata/widgets/or_divider.dart';
 import 'package:sawata/widgets/snackbar_helper.dart';
@@ -70,29 +74,125 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _createAccount() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (!_agreedToTerms) {
+      showAppSnackBar(context, 'Please agree to the Terms and Privacy Policy');
+      return;
+    }
+    if (_selectedRole == null) {
+      showAppSnackBar(context, 'Please select whether you are a User or Guardian');
+      return;
+    }
     setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    showAppSnackBar(context, 'Account created. Welcome to Sawatâ!');
-    final destination = _selectedRole == 'Guardian'
-        ? AppRoutes.guardianDashboard
-        : AppRoutes.home;
-    Navigator.of(
-      context,
-    ).pushNamedAndRemoveUntil(destination, (route) => false);
+    try {
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: _emailController.text.trim(),
+            password: _passwordController.text,
+          );
+      final user = credential.user;
+      final name = _nameController.text.trim();
+      if (user != null) {
+        await user.updateDisplayName(name);
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .set(
+              {
+                'role': _selectedRole == 'Guardian' ? 'guardian' : 'user',
+                'name': name,
+                'email': user.email ?? '',
+                'updatedAt': FieldValue.serverTimestamp(),
+              },
+              SetOptions(merge: true),
+            );
+        if (_selectedRole != 'Guardian') {
+          await UserDataService.ensureInitialized(user.uid);
+        }
+        try {
+          await AuthEmailService.sendEmailVerification();
+        } catch (_) {
+          // Non-fatal — the account still exists; user can verify later.
+        }
+      }
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        'Account created. Check your email to verify your address.',
+      );
+      final destination = _selectedRole == 'Guardian'
+          ? AppRoutes.guardianDashboard
+          : AppRoutes.home;
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil(destination, (route) => false);
+    } on FirebaseAuthException catch (e) {
+      if (mounted) showAppSnackBar(context, _authErrorMessage(e));
+    } catch (_) {
+      if (mounted) {
+        showAppSnackBar(context, 'Account creation failed. Please try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  String _authErrorMessage(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'email-already-in-use':
+        return 'An account already exists with that email.';
+      case 'invalid-email':
+        return 'Enter a valid email address.';
+      case 'weak-password':
+        return 'Please choose a stronger password.';
+      default:
+        return e.message ?? 'Account creation failed. Please try again.';
+    }
   }
 
   Future<void> _continueWithGoogle() async {
     setState(() => _isGoogleLoading = true);
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
-    showAppSnackBar(context, 'Account created with Google. Welcome to Sawatâ!');
-    final destination = _selectedRole == 'Guardian'
-        ? AppRoutes.guardianDashboard
-        : AppRoutes.home;
-    Navigator.of(
-      context,
-    ).pushNamedAndRemoveUntil(destination, (route) => false);
+    try {
+      final account = await GoogleSignIn.instance.authenticate();
+      final credential = GoogleAuthProvider.credential(
+        idToken: account.authentication.idToken,
+      );
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
+      final user = userCredential.user;
+      if (user != null) {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
+          {
+            'role': _selectedRole == 'Guardian' ? 'guardian' : 'user',
+            'name': user.displayName ?? '',
+            'email': user.email ?? '',
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+        if (_selectedRole != 'Guardian') {
+          await UserDataService.ensureInitialized(user.uid);
+        }
+      }
+      if (!mounted) return;
+      showAppSnackBar(context, 'Account created with Google. Welcome to Sawatâ!');
+      final destination = _selectedRole == 'Guardian'
+          ? AppRoutes.guardianDashboard
+          : AppRoutes.home;
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil(destination, (route) => false);
+    } on GoogleSignInException catch (e) {
+      if (mounted && e.code != GoogleSignInExceptionCode.canceled) {
+        showAppSnackBar(context, 'Google sign-in failed. Please try again.');
+      }
+    } catch (_) {
+      if (mounted) {
+        showAppSnackBar(context, 'Google sign-in failed. Please try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _isGoogleLoading = false);
+    }
   }
 
   Future<void> _pickRole() async {
@@ -361,11 +461,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             label: 'Sign up with Google',
                             isLoading: _isGoogleLoading,
                             onPressed: _isLoading ? null : _continueWithGoogle,
-                          ),
-                          const SizedBox(height: 12),
-                          AppleSignInButton(
-                            label: 'Sign up with Apple',
-                            onPressed: () {},
                           ),
                           const SizedBox(height: 18),
                           Center(

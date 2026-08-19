@@ -12,6 +12,7 @@ class SawataApp extends StatelessWidget {
       title: 'Sawata',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
+      navigatorKey: AppRoutes.navigatorKey,
       initialRoute: AppRoutes.splash,
       onGenerateRoute: AppRoutes.onGenerateRoute,
     );

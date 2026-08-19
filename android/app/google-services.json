@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "80825860123",
+    "project_id": "sawata-7df1c",
+    "storage_bucket": "sawata-7df1c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:80825860123:android:c743f131b32c6cbb4538be",
+        "android_client_info": {
+          "package_name": "com.example.sawata"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "80825860123-jes1hn7mncktllenvgi3chh5v7n27pag.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.sawata",
+            "certificate_hash": "31f9cbbbbc742ac0489d0d1bef809450d766d451"
+          }
+        },
+        {
+          "client_id": "80825860123-4m3do6c31ussrehsrh37528uia1jkhiq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBvOmu85z4K8s5fJhKZVxcTkFOkeJIRi2g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "80825860123-4m3do6c31ussrehsrh37528uia1jkhiq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

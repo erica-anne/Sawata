@@ -46,7 +46,17 @@ class AppStore {
   /// Pending guardian-invite count, mirrored to the Guardian bottom nav
   /// badge. The Guardian Invites screen owns the detailed list; this is
   /// just the count other Guardian screens need for their badge.
-  int pendingGuardianInvites = 3;
+  int pendingGuardianInvites = 0;
+
+  /// The invitation the current user has sent to their guardian, if any —
+  /// set by the Add Guardian wizard, read by the Guardian-side Invites
+  /// screen so it shows up in that guardian's pending list.
+  PendingGuardianInvite? myGuardianInvite;
+
+  /// Flips true once the guardian confirms [myGuardianInvite]. The Add
+  /// Guardian wizard's "Check Status" step reads this instead of always
+  /// reporting success.
+  bool myGuardianInviteAccepted = false;
 
   void addJournalEntry(JournalEntry entry) {
     journalEntries.insert(0, entry);
@@ -61,7 +71,11 @@ class AppStore {
     item.isBlocked = !item.isBlocked;
   }
 
-  void addBlockedItem({required String name, required String category}) {
+  void addBlockedItem({
+    required String name,
+    required String category,
+    String? packageName,
+  }) {
     blockedItems.insert(
       0,
       BlockedItem(
@@ -71,16 +85,23 @@ class AppStore {
         icon: iconForBlockedCategory(category),
         isBlocked: true,
         isCustom: true,
+        packageName: packageName,
       ),
     );
     sitesBlockedCount += 1;
   }
 
-  void updateBlockedItem(String id, {required String name, required String category}) {
+  void updateBlockedItem(
+    String id, {
+    required String name,
+    required String category,
+    String? packageName,
+  }) {
     final item = blockedItems.firstWhere((e) => e.id == id);
     item.name = name;
     item.category = category;
     item.icon = iconForBlockedCategory(category);
+    item.packageName = packageName;
   }
 
   void removeBlockedItem(String id) {

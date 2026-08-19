@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors the Flutter theme's palette (lib/app/theme.dart) so the
+         native block screen doesn't look like a different app. -->
+    <color name="sawata_deep_teal">#FF16332B</color>
+    <color name="sawata_accent">#FF2E7D6B</color>
+    <color name="sawata_mint_bg">#FFDDEEE7</color>
+    <color name="sawata_red">#FFC0392B</color>
+    <color name="sawata_red_bg">#FFFBE7E4</color>
+</resources>

@@ -5,7 +5,7 @@ class DashboardHeader extends StatelessWidget {
     super.key,
     required this.onBellTap,
     required this.onSettingsTap,
-    this.hasNotification = true,
+    this.hasNotification = false,
   });
 
   final VoidCallback onBellTap;

@@ -55,46 +55,54 @@ class AuthBackdrop extends StatelessWidget {
 /// "Your recovery. Our priority." tagline. Placed as the last item in each
 /// screen's scrollable column so it always sits after the real content,
 /// regardless of how tall that content is.
+///
+/// [height] fixes the illustration's height (used on Register, whose content
+/// already fills the screen). Pass null and wrap in an [Expanded] instead
+/// (used on Login) to have the hills stretch and soak up any leftover
+/// vertical space rather than leaving it blank above the art.
 class AuthFooterArt extends StatelessWidget {
-  const AuthFooterArt({super.key});
+  const AuthFooterArt({super.key, this.height = 190});
+
+  final double? height;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 190,
-      width: double.infinity,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(child: CustomPaint(painter: _HillWavesPainter())),
-          Positioned(
-            right: -6,
-            top: 14,
-            child: Transform.rotate(angle: 0.4, child: _leafCluster(big: true)),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 26,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(Icons.verified_user, size: 16, color: _deepTeal),
-                SizedBox(width: 6),
-                Text(
-                  'Your recovery. Our priority.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: _deepTeal,
-                  ),
+    final art = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(child: CustomPaint(painter: _HillWavesPainter())),
+        Positioned(
+          right: -6,
+          top: 14,
+          child: Transform.rotate(angle: 0.4, child: _leafCluster(big: true)),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 26,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Icon(Icons.verified_user, size: 16, color: _deepTeal),
+              SizedBox(width: 6),
+              Text(
+                'Your recovery. Our priority.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: _deepTeal,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
+
+    if (height == null) {
+      return SizedBox.expand(child: art);
+    }
+    return SizedBox(height: height, width: double.infinity, child: art);
   }
 }
 

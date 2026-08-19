@@ -1,6 +1,12 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import 'package:sawata/app/app_config.dart';
 import 'package:sawata/app/routes.dart';
+import 'package:sawata/data/dummy_data_store.dart';
+import 'package:sawata/models/guardian_contact.dart';
+import 'package:sawata/services/email_service.dart';
 import 'package:sawata/widgets/confirm_dialog.dart';
 import 'package:sawata/widgets/snackbar_helper.dart';
 
@@ -20,10 +26,13 @@ class AddGuardianScreen extends StatefulWidget {
 }
 
 class _AddGuardianScreenState extends State<AddGuardianScreen> {
+  final store = AppStore.instance;
+  final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
 
+  static final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
   static const _relationships = [
     'Parent',
     'Sibling',
@@ -39,8 +48,16 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
 
   int _currentStep = 0;
   String? _relationship;
+  bool _showRelationshipError = false;
   DateTime? _sentAt;
   bool _isAccepted = false;
+  bool _isSending = false;
+  bool _isResending = false;
+
+  /// Firestore doc id of the invite this wizard created — the single
+  /// source of truth for status (`pending`/`accepted`), replacing the old
+  /// in-memory `store.myGuardianInviteAccepted` flag.
+  String? _inviteDocId;
 
   static const _deepTeal = Color(0xFF16332B);
 
@@ -60,6 +77,20 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
     final minute = time.minute.toString().padLeft(2, '0');
     final ampm = time.hour >= 12 ? 'PM' : 'AM';
     return '$hour12:$minute $ampm';
+  }
+
+  String? _validateName(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return "Please enter your guardian's name";
+    }
+    return null;
+  }
+
+  String? _validateEmail(String? value) {
+    final email = value?.trim() ?? '';
+    if (email.isEmpty) return 'Please enter an email address';
+    if (!_emailPattern.hasMatch(email)) return 'Enter a valid email address';
+    return null;
   }
 
   Future<void> _pickRelationship() async {
@@ -92,18 +123,186 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
         ),
       ),
     );
-    if (choice != null) setState(() => _relationship = choice);
+    if (choice != null) {
+      setState(() {
+        _relationship = choice;
+        _showRelationshipError = false;
+      });
+    }
   }
 
   void _goToStep(int step) => setState(() => _currentStep = step);
 
-  void _checkStatus() => setState(() => _isAccepted = true);
+  void _handleContinueFromInfo() {
+    final formValid = _formKey.currentState?.validate() ?? false;
+    final relationshipValid = _relationship != null;
+    if (!relationshipValid) setState(() => _showRelationshipError = true);
+    if (!formValid || !relationshipValid) return;
+    _goToStep(1);
+  }
 
-  void _sendInvitation() {
-    setState(() {
-      _sentAt = DateTime.now();
-      _currentStep = 2;
-    });
+  Future<void> _checkStatus() async {
+    final docId = _inviteDocId;
+    if (docId == null) return;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('invites')
+          .doc(docId)
+          .get();
+      final status = doc.data()?['status'] as String?;
+      if (!mounted) return;
+      if (status == 'accepted') {
+        setState(() => _isAccepted = true);
+        store.myGuardianInviteAccepted = true;
+      } else {
+        showAppSnackBar(
+          context,
+          "Your guardian hasn't accepted the invitation yet.",
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        showAppSnackBar(context, 'Could not check status. Try again.');
+      }
+    }
+  }
+
+  Future<void> _sendInvitation() async {
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final relationship = _relationship ?? 'Guardian';
+    if (_isSending) return;
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      showAppSnackBar(
+        context,
+        "You're signed out — please sign in again to send an invitation.",
+        isSuccess: false,
+      );
+      return;
+    }
+    setState(() => _isSending = true);
+    try {
+      // Step 1: the invitation is saved to Firestore regardless of what
+      // happens next — this is the source of truth for "an invite exists",
+      // independent of whether the notification email succeeds.
+      final ref = await FirebaseFirestore.instance.collection('invites').add({
+        'fromUid': currentUser.uid,
+        'fromName': currentUser.displayName ?? 'A Sawata user',
+        'fromEmail': currentUser.email ?? '',
+        'toEmail': email,
+        'toName': name,
+        'toPhone': _phoneController.text.trim(),
+        'relationship': relationship,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      final docId = ref.id;
+
+      // Step 2: notify the guardian by email. Failure here does NOT roll
+      // back the saved invitation above — it just means the guardian
+      // hasn't been told about it yet (they can be resent, or the protege
+      // can share the link another way).
+      final result = await EmailService.sendGuardianInvite(
+        toEmail: email,
+        guardianName: name,
+        userName: currentUser.displayName ?? 'A Sawata user',
+        appLink: AppConfig.guardianInvitesLink,
+      );
+      if (!mounted) return;
+      if (!result.success) {
+        // Don't advance to "Invitation Sent!" or mark the invite as sent
+        // anywhere the rest of the app reads that state from — the
+        // guardian was never actually notified.
+        _inviteDocId = docId;
+        showAppSnackBar(
+          context,
+          _guardianInviteErrorMessage(result),
+          isSuccess: false,
+        );
+        return;
+      }
+      setState(() {
+        _sentAt = DateTime.now();
+        _inviteDocId = docId;
+        _currentStep = 2;
+        store.myGuardianInvite = PendingGuardianInvite(
+          name: name,
+          email: email,
+          phone: _phoneController.text.trim(),
+          relationship: relationship,
+          sentAt: _sentAt!,
+          fromUid: currentUser.uid,
+        );
+        store.myGuardianInviteAccepted = false;
+        store.pendingGuardianInvites += 1;
+      });
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  /// Maps an [EmailResult] failure to a message a user can act on, without
+  /// leaking transport internals (HTTP status/provider response body).
+  String _guardianInviteErrorMessage(EmailResult result) {
+    switch (result.errorCode) {
+      case EmailErrorCode.notConfigured:
+        return "Couldn't send the invitation email — email sending isn't "
+            'configured on this build.';
+      case EmailErrorCode.invalidRecipient:
+        return "That guardian's email address looks invalid.";
+      case EmailErrorCode.rateLimited:
+        return "You've sent too many invites to this email recently. "
+            'Try again later.';
+      case EmailErrorCode.rejected:
+        return 'The email provider rejected the invitation. Please try '
+            'again later.';
+      case EmailErrorCode.transportError:
+        return 'Network error while sending the invitation. Check your '
+            'connection and try again.';
+      case EmailErrorCode.unknown:
+      case null:
+        return "Couldn't send the invitation email. Please try again.";
+    }
+  }
+
+  Future<void> _resendInvitation() async {
+    if (_isResending) return;
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final docId = _inviteDocId;
+    if (docId == null) {
+      showAppSnackBar(
+        context,
+        "Couldn't find this invitation to resend. Please send a new one.",
+        isSuccess: false,
+      );
+      return;
+    }
+    setState(() => _isResending = true);
+    try {
+      final result = await EmailService.sendGuardianInvite(
+        toEmail: email,
+        guardianName: name,
+        userName: currentUser?.displayName ?? 'A Sawata user',
+        appLink: AppConfig.guardianInvitesLink,
+      );
+      if (!mounted) return;
+      if (!result.success) {
+        showAppSnackBar(context, _guardianInviteErrorMessage(result), isSuccess: false);
+        return;
+      }
+      await FirebaseFirestore.instance
+          .collection('invites')
+          .doc(docId)
+          .update({'resentAt': FieldValue.serverTimestamp()});
+      if (!mounted) return;
+      setState(() => _sentAt = DateTime.now());
+      showAppSnackBar(context, 'Invitation resent to $email');
+    } finally {
+      if (mounted) setState(() => _isResending = false);
+    }
   }
 
   Future<void> _cancelInvitation() async {
@@ -115,6 +314,20 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
       confirmLabel: 'Cancel Invitation',
     );
     if (!confirmed || !mounted) return;
+    final docId = _inviteDocId;
+    if (docId != null) {
+      await FirebaseFirestore.instance
+          .collection('invites')
+          .doc(docId)
+          .update({'status': 'cancelled'});
+    }
+    if (store.myGuardianInvite != null) {
+      setState(() {
+        store.myGuardianInvite = null;
+        store.pendingGuardianInvites -= 1;
+      });
+    }
+    if (!mounted) return;
     Navigator.of(context).pop();
   }
 
@@ -230,12 +443,16 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
             const SizedBox(height: 22),
             switch (_currentStep) {
               0 => _GuardianInfoStep(
+                formKey: _formKey,
                 nameController: _nameController,
                 emailController: _emailController,
                 phoneController: _phoneController,
                 relationship: _relationship,
+                showRelationshipError: _showRelationshipError,
                 onPickRelationship: _pickRelationship,
-                onContinue: () => _goToStep(1),
+                validateName: _validateName,
+                validateEmail: _validateEmail,
+                onContinue: _handleContinueFromInfo,
               ),
               1 => _ReviewStep(
                 name: _nameController.text.trim(),
@@ -249,7 +466,7 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
                 name: _nameController.text.trim(),
                 email: _emailController.text.trim(),
                 onDone: () => _goToStep(3),
-                onResend: () {},
+                onResend: _resendInvitation,
               ),
               _ => _GuardianStatusStep(
                 name: _nameController.text.trim(),
@@ -259,7 +476,7 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
                 sentTimeLabel: _sentAt == null ? '—' : _formatTime(_sentAt!),
                 isAccepted: _isAccepted,
                 onCheckStatus: _checkStatus,
-                onResend: () {},
+                onResend: _resendInvitation,
                 onCancel: _cancelInvitation,
                 onViewGuardian: () => Navigator.of(
                   context,
@@ -323,19 +540,27 @@ class _Card extends StatelessWidget {
 
 class _GuardianInfoStep extends StatelessWidget {
   const _GuardianInfoStep({
+    required this.formKey,
     required this.nameController,
     required this.emailController,
     required this.phoneController,
     required this.relationship,
+    required this.showRelationshipError,
     required this.onPickRelationship,
+    required this.validateName,
+    required this.validateEmail,
     required this.onContinue,
   });
 
+  final GlobalKey<FormState> formKey;
   final TextEditingController nameController;
   final TextEditingController emailController;
   final TextEditingController phoneController;
   final String? relationship;
+  final bool showRelationshipError;
   final VoidCallback onPickRelationship;
+  final String? Function(String?) validateName;
+  final String? Function(String?) validateEmail;
   final VoidCallback onContinue;
 
   static const _deepTeal = Color(0xFF16332B);
@@ -347,61 +572,69 @@ class _GuardianInfoStep extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _Card(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Guardian Information',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                  color: _deepTeal,
+          child: Form(
+            key: formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Guardian Information',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    color: _deepTeal,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                "Enter your guardian's details. They will receive an "
-                'invitation to connect.',
-                style: TextStyle(fontSize: 12, color: Color(0xFF5B7269)),
-              ),
-              const SizedBox(height: 16),
-              GuardianFormField(
-                label: 'Full Name',
-                hint: 'Enter full name',
-                icon: Icons.person_outline,
-                controller: nameController,
-              ),
-              const SizedBox(height: 14),
-              GuardianFormField(
-                label: 'Email Address',
-                hint: 'Enter email address',
-                icon: Icons.mail_outline,
-                required: true,
-                controller: emailController,
-                keyboardType: TextInputType.emailAddress,
-                helperText: 'Required. This is where the invitation will be sent.',
-              ),
-              const SizedBox(height: 14),
-              GuardianFormField(
-                label: 'Phone Number (Optional)',
-                hint: 'Enter phone number',
-                icon: Icons.call_outlined,
-                controller: phoneController,
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 14),
-              GuardianFormField(
-                key: ValueKey(relationship),
-                label: 'Relationship',
-                hint: 'Select relationship',
-                icon: Icons.people_outline,
-                required: true,
-                readOnly: true,
-                onTap: onPickRelationship,
-                trailing: const Icon(Icons.keyboard_arrow_down),
-                initialValue: relationship,
-              ),
-            ],
+                const SizedBox(height: 4),
+                const Text(
+                  "Enter your guardian's details. They will receive an "
+                  'invitation to connect.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF5B7269)),
+                ),
+                const SizedBox(height: 16),
+                GuardianFormField(
+                  label: "Guardian's Full Name",
+                  hint: "Enter your guardian's full name",
+                  icon: Icons.person_outline,
+                  controller: nameController,
+                  validator: validateName,
+                ),
+                const SizedBox(height: 14),
+                GuardianFormField(
+                  label: 'Email Address',
+                  hint: 'Enter email address',
+                  icon: Icons.mail_outline,
+                  required: true,
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  validator: validateEmail,
+                  helperText: 'Required. This is where the invitation will be sent.',
+                ),
+                const SizedBox(height: 14),
+                GuardianFormField(
+                  label: 'Phone Number (Optional)',
+                  hint: 'Enter phone number',
+                  icon: Icons.call_outlined,
+                  controller: phoneController,
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 14),
+                GuardianFormField(
+                  key: ValueKey(relationship),
+                  label: 'Relationship',
+                  hint: 'Select relationship',
+                  icon: Icons.people_outline,
+                  required: true,
+                  readOnly: true,
+                  onTap: onPickRelationship,
+                  trailing: const Icon(Icons.keyboard_arrow_down),
+                  initialValue: relationship,
+                  errorText: showRelationshipError
+                      ? "Please select your guardian's relationship to you."
+                      : null,
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 18),
@@ -495,7 +728,7 @@ class _ReviewStep extends StatelessWidget {
               const SizedBox(height: 10),
               _InfoRow(
                 icon: Icons.person_outline,
-                label: 'Full Name',
+                label: "Guardian's Full Name",
                 value: name.isEmpty ? '—' : name,
               ),
               _InfoRow(

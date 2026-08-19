@@ -1,9 +1,13 @@
 import 'package:fl_chart/fl_chart.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'package:sawata/app/routes.dart';
-import 'package:sawata/data/dummy_data_store.dart';
+import 'package:sawata/models/blocked_item.dart';
 import 'package:sawata/models/stat_snapshot.dart';
+import 'package:sawata/models/user_stats.dart';
+import 'package:sawata/services/user_data_service.dart';
+import 'package:sawata/utils/attempt_buckets.dart';
 import 'package:sawata/widgets/snackbar_helper.dart';
 import '../dashboard/widgets/dashboard_header.dart';
 import 'widgets/recent_blocked_card.dart';
@@ -22,7 +26,6 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
-  final store = AppStore.instance;
   int _selected = 0;
 
   static const _accent = Color(0xFF2E7D6B);
@@ -31,17 +34,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   static const _blueBg = Color(0xFFE3ECFB);
   static const _blue = Color(0xFF3B6FE0);
 
-  AnalyticsDataset get dataset => store.analyticsDatasets[_selected];
+  static const _periodLabels = ['Week', 'Month', 'Year'];
+  static const _periodCaptions = ['This Week', 'This Month', 'This Year'];
+
+  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   static const List<double> _niceIntervals = [
+    5,
+    10,
+    25,
     50,
     100,
     250,
     500,
     1000,
-    2000,
-    5000,
-    10000,
   ];
 
   double _niceInterval(double maxValue) {
@@ -51,22 +57,64 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return _niceIntervals.last;
   }
 
+  ({List<WeeklyStat> series, double trendPct}) _bucket(
+    List<BlockAttempt> attempts,
+  ) {
+    final now = DateTime.now();
+    switch (_selected) {
+      case 1:
+        return AttemptBuckets.month(attempts, now);
+      case 2:
+        return AttemptBuckets.year(attempts, now);
+      default:
+        return AttemptBuckets.week(attempts, now);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final uid = _uid;
+    return StreamBuilder<UserStats>(
+      stream: uid == null ? null : UserDataService.watchStats(uid),
+      builder: (context, statsSnapshot) {
+        final stats = statsSnapshot.data ?? UserStats.initial();
+        return StreamBuilder<List<BlockedItem>>(
+          stream: uid == null ? null : UserDataService.watchBlockedItems(uid),
+          builder: (context, itemsSnapshot) {
+            final items = itemsSnapshot.data ?? const <BlockedItem>[];
+            return StreamBuilder<List<BlockAttempt>>(
+              stream: uid == null
+                  ? null
+                  : UserDataService.watchBlockAttempts(uid),
+              builder: (context, attemptsSnapshot) {
+                final attempts =
+                    attemptsSnapshot.data ?? const <BlockAttempt>[];
+                return _buildBody(context, stats, items, attempts);
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildBody(
+    BuildContext context,
+    UserStats stats,
+    List<BlockedItem> items,
+    List<BlockAttempt> attempts,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
-    final totalSavings = dataset.savings.fold<double>(
-      0,
-      (sum, e) => sum + e.value,
-    );
-    final totalAttempts = dataset.attempts.fold<double>(
-      0,
-      (s, e) => s + e.value,
-    );
-    final maxSavings = dataset.savings
+    final bucket = _bucket(attempts);
+    final periodTotal = bucket.series.fold<double>(0, (s, e) => s + e.value);
+    final maxSeries = bucket.series
         .map((e) => e.value)
-        .reduce((a, b) => a > b ? a : b);
-    final yInterval = _niceInterval(maxSavings);
-    final chartMaxY = (maxSavings / yInterval).ceil() * yInterval + yInterval;
+        .fold<double>(0, (a, b) => a > b ? a : b);
+    final yInterval = _niceInterval(maxSeries <= 0 ? 1 : maxSeries);
+    final chartMaxY = (maxSeries / yInterval).ceil() * yInterval + yInterval;
+
+    final recentAttempts = [...attempts]
+      ..sort((a, b) => b.time.compareTo(a.time));
 
     return Scaffold(
       body: SafeArea(
@@ -96,11 +144,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             const SizedBox(height: 16),
             SegmentedButton<int>(
               segments: [
-                for (var i = 0; i < store.analyticsDatasets.length; i++)
-                  ButtonSegment(
-                    value: i,
-                    label: Text(store.analyticsDatasets[i].label),
-                  ),
+                for (var i = 0; i < _periodLabels.length; i++)
+                  ButtonSegment(value: i, label: Text(_periodLabels[i])),
               ],
               selected: {_selected},
               onSelectionChanged: (selection) =>
@@ -108,8 +153,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             ),
             const SizedBox(height: 18),
             StreakHeroCard(
-              currentStreak: store.streakDays,
-              longestStreak: dataset.longestStreakDays,
+              currentStreak: stats.streakDays,
+              // No streak-history tracking exists yet, so the longest streak
+              // we can honestly report is the current one.
+              longestStreak: stats.streakDays,
               goalDays: 100,
             ),
             const SizedBox(height: 14),
@@ -121,9 +168,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     iconColor: _accent,
                     iconBg: _mintBg,
                     label: 'Money Saved',
-                    value: '₱${totalSavings.toStringAsFixed(0)}',
-                    trendPct: dataset.moneySavedTrendPct,
-                    trendCaption: 'vs last ${dataset.label.toLowerCase()}',
+                    value: '₱${stats.moneySavedPesos}',
+                    trendPct: 0,
+                    trendCaption: 'not tracked yet',
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -133,8 +180,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     iconColor: _blue,
                     iconBg: _blueBg,
                     label: 'Sites Blocked',
-                    value: '${store.sitesBlockedCount}',
-                    trendPct: store.sitesBlockedTrendPct,
+                    value: '${items.length}',
+                    trendPct: 0,
+                    trendCaption: 'total on your list',
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -144,9 +192,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     iconColor: _accent,
                     iconBg: _mintBg,
                     label: 'Attempts Blocked',
-                    value: totalAttempts.toStringAsFixed(0),
-                    trendPct: dataset.attemptsTrendPct,
-                    trendCaption: 'vs last ${dataset.label.toLowerCase()}',
+                    value: periodTotal.toStringAsFixed(0),
+                    trendPct: bucket.trendPct,
+                    trendCaption:
+                        'vs last ${_periodLabels[_selected].toLowerCase()}',
                   ),
                 ),
               ],
@@ -162,7 +211,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            'Money Saved',
+                            'Attempts Blocked',
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w800),
                           ),
@@ -182,7 +231,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                dataset.periodLabel,
+                                _periodCaptions[_selected],
                                 style: Theme.of(context).textTheme.labelMedium,
                               ),
                               const Icon(Icons.keyboard_arrow_down, size: 16),
@@ -220,10 +269,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                             leftTitles: AxisTitles(
                               sideTitles: SideTitles(
                                 showTitles: true,
-                                reservedSize: 42,
+                                reservedSize: 32,
                                 interval: yInterval,
                                 getTitlesWidget: (value, meta) => Text(
-                                  '₱${value.toInt()}',
+                                  '${value.toInt()}',
                                   style: Theme.of(context).textTheme.labelSmall
                                       ?.copyWith(
                                         color: colorScheme.onSurfaceVariant,
@@ -236,13 +285,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                 showTitles: true,
                                 getTitlesWidget: (value, meta) {
                                   final i = value.toInt();
-                                  if (i < 0 || i >= dataset.savings.length) {
+                                  if (i < 0 || i >= bucket.series.length) {
                                     return const SizedBox.shrink();
                                   }
                                   return Padding(
                                     padding: const EdgeInsets.only(top: 6),
                                     child: Text(
-                                      dataset.savings[i].label,
+                                      bucket.series[i].label,
                                       style: Theme.of(
                                         context,
                                       ).textTheme.labelSmall,
@@ -261,7 +310,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                               getTooltipItem:
                                   (group, groupIndex, rod, rodIndex) {
                                     return BarTooltipItem(
-                                      '₱${rod.toY.toStringAsFixed(0)}',
+                                      rod.toY.toStringAsFixed(0),
                                       const TextStyle(
                                         color: _accentDeep,
                                         fontSize: 11.5,
@@ -272,13 +321,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                             ),
                           ),
                           barGroups: [
-                            for (var i = 0; i < dataset.savings.length; i++)
+                            for (var i = 0; i < bucket.series.length; i++)
                               BarChartGroupData(
                                 x: i,
                                 showingTooltipIndicators: const [0],
                                 barRods: [
                                   BarChartRodData(
-                                    toY: dataset.savings[i].value,
+                                    toY: bucket.series[i].value,
                                     gradient: const LinearGradient(
                                       begin: Alignment.topCenter,
                                       end: Alignment.bottomCenter,
@@ -299,7 +348,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             ),
             const SizedBox(height: 16),
             RecentBlockedCard(
-              attempts: store.recentAttempts.take(3).toList(),
+              attempts: recentAttempts.take(3).toList(),
               onViewAll: widget.onNavigateToTab == null
                   ? null
                   : () => widget.onNavigateToTab!(1),

@@ -33,8 +33,6 @@ class _GuardianReportsScreenState extends State<GuardianReportsScreen> {
   static const _mintBg = Color(0xFFDDEEE7);
   static const _blue = Color(0xFF3B6FE0);
   static const _blueBg = Color(0xFFE3ECFB);
-  static const _amber = Color(0xFFB07A1E);
-  static const _amberBg = Color(0xFFFCEFD2);
   static const _deepTeal = Color(0xFF16332B);
 
   static const _monthNames = [
@@ -71,6 +69,34 @@ class _GuardianReportsScreenState extends State<GuardianReportsScreen> {
               a.time.day == day.day,
         )
         .length;
+  }
+
+  static const _timeBucketLabels = [
+    'Morning (6 AM – 12 PM)',
+    'Afternoon (12 PM – 6 PM)',
+    'Evening (6 PM – 10 PM)',
+    'Night (10 PM – 6 AM)',
+  ];
+
+  int _timeBucketIndex(int hour) => hour >= 6 && hour < 12
+      ? 0
+      : hour >= 12 && hour < 18
+      ? 1
+      : hour >= 18 && hour < 22
+      ? 2
+      : 3;
+
+  String _mostActiveTimeLabel() {
+    if (store.recentAttempts.isEmpty) return '—';
+    final counts = List<int>.filled(4, 0);
+    for (final attempt in store.recentAttempts) {
+      counts[_timeBucketIndex(attempt.time.hour)]++;
+    }
+    var busiest = 0;
+    for (var i = 1; i < counts.length; i++) {
+      if (counts[i] > counts[busiest]) busiest = i;
+    }
+    return _timeBucketLabels[busiest];
   }
 
   List<WeeklyStat> _dailyBuckets(DateTime today) {
@@ -170,7 +196,7 @@ class _GuardianReportsScreenState extends State<GuardianReportsScreen> {
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
           children: [
             GuardianHeader(
-              notificationCount: 2,
+              notificationCount: store.pendingGuardianInvites,
               onBellTap: () => Navigator.of(
                 context,
               ).pushReplacementNamed(AppRoutes.guardianAlerts),
@@ -250,16 +276,8 @@ class _GuardianReportsScreenState extends State<GuardianReportsScreen> {
                   iconColor: const Color(0xFF7A5FCB),
                   iconBg: const Color(0xFFE8E2F9),
                   label: 'Most Active Time',
-                  value: '8:00 PM – 11:00 PM',
+                  value: _mostActiveTimeLabel(),
                   caption: 'Peak of blocked attempts',
-                ),
-                SummaryStat(
-                  icon: Icons.file_download_outlined,
-                  iconColor: _amber,
-                  iconBg: _amberBg,
-                  label: 'Uninstall Attempts',
-                  value: '1',
-                  caption: 'This ${_period.noun}',
                 ),
                 SummaryStat(
                   icon: Icons.lock,

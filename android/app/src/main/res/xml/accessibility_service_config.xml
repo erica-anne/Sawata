@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Configuration for SawataAccessibilityService.kt.
+
+  Deliberately as narrow as possible: we only need to know which app just
+  came to the foreground, not to read its screen content, so
+  canRetrieveWindowContent stays false and packageNames is left unset
+  (monitor every app) rather than requesting flag_retrieve_interactive_windows
+  or similar.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:notificationTimeout="100"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/accessibility_service_description" />
