@@ -31,6 +31,12 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }
@@ -70,4 +76,12 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     // .await() on a Firebase Task<T> inside the CoroutineWorkers.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+
+    // InternetDomainName (registrable-domain/eTLD+1, Public-Suffix-List-
+    // backed) for HostFilter.registrableDomain — already resolved onto the
+    // runtime classpath transitively via Firebase/gRPC, but not exposed at
+    // compile time to this module without an explicit declaration. Pinned
+    // to the exact version Gradle already resolves so this doesn't shift
+    // what actually ships in the APK.
+    implementation("com.google.guava:guava:32.1.3-android")
 }
