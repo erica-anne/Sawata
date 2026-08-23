@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 
 import 'package:sawata/app/app_config.dart';
 import 'package:sawata/app/routes.dart';
-import 'package:sawata/data/dummy_data_store.dart';
-import 'package:sawata/models/guardian_contact.dart';
 import 'package:sawata/services/email_service.dart';
 import 'package:sawata/widgets/confirm_dialog.dart';
 import 'package:sawata/widgets/snackbar_helper.dart';
@@ -26,7 +24,6 @@ class AddGuardianScreen extends StatefulWidget {
 }
 
 class _AddGuardianScreenState extends State<AddGuardianScreen> {
-  final store = AppStore.instance;
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -153,7 +150,6 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
       if (!mounted) return;
       if (status == 'accepted') {
         setState(() => _isAccepted = true);
-        store.myGuardianInviteAccepted = true;
       } else {
         showAppSnackBar(
           context,
@@ -207,7 +203,7 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
         toEmail: email,
         guardianName: name,
         userName: currentUser.displayName ?? 'A Sawata user',
-        appLink: AppConfig.guardianInvitesLink,
+        appLink: AppConfig.guardianInviteEmailLink,
       );
       if (!mounted) return;
       if (!result.success) {
@@ -226,16 +222,6 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
         _sentAt = DateTime.now();
         _inviteDocId = docId;
         _currentStep = 2;
-        store.myGuardianInvite = PendingGuardianInvite(
-          name: name,
-          email: email,
-          phone: _phoneController.text.trim(),
-          relationship: relationship,
-          sentAt: _sentAt!,
-          fromUid: currentUser.uid,
-        );
-        store.myGuardianInviteAccepted = false;
-        store.pendingGuardianInvites += 1;
       });
     } finally {
       if (mounted) setState(() => _isSending = false);
@@ -286,7 +272,7 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
         toEmail: email,
         guardianName: name,
         userName: currentUser?.displayName ?? 'A Sawata user',
-        appLink: AppConfig.guardianInvitesLink,
+        appLink: AppConfig.guardianInviteEmailLink,
       );
       if (!mounted) return;
       if (!result.success) {
@@ -320,12 +306,6 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
           .collection('invites')
           .doc(docId)
           .update({'status': 'cancelled'});
-    }
-    if (store.myGuardianInvite != null) {
-      setState(() {
-        store.myGuardianInvite = null;
-        store.pendingGuardianInvites -= 1;
-      });
     }
     if (!mounted) return;
     Navigator.of(context).pop();

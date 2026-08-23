@@ -30,6 +30,18 @@ class AppConfig {
   static const String guardianInvitesLink =
       '$guardianInvitesScheme://$guardianInvitesHost';
 
+  /// Public https landing page (hosted via GitHub Pages, see
+  /// docs/guardian-invite.html) that immediately redirects to
+  /// [guardianInvitesLink]. Used as the *outbound email* link instead of
+  /// the raw custom scheme above — Gmail (and most mail clients) strip
+  /// non-http(s)/mailto/tel hrefs from HTML email, so a `sawata://` link
+  /// placed directly in an email is silently inert. A real https:// link
+  /// passes Gmail's sanitizer; once opened in an actual browser, that
+  /// page's own redirect (a context Gmail doesn't apply the same
+  /// sanitization to) hands off to the app normally.
+  static const String guardianInviteEmailLink =
+      'https://erica-anne.github.io/Sawata/guardian-invite.html';
+
   /// Support inbox shown in the footer of outbound emails.
   static const String supportEmail = 'support@sawata.app';
 }
