@@ -4,13 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Opening Sawatâ…</title>
-  <script>
-    // Gmail (and most mail clients) strip non-http(s) hrefs from HTML
-    // email, so the guardian-invite email links here instead of directly
-    // to sawata://guardian-invites. A real browser has no such
-    // restriction, so this redirect completes the hop.
-    window.location.replace('sawata://guardian-invites');
-  </script>
 </head>
 <body style="margin:0; font-family:Arial, Helvetica, sans-serif; background:#F4FAF6; color:#34443A; text-align:center; padding:70px 24px;">
   <h2 style="margin:0 0 12px;">Opening Sawatâ…</h2>
@@ -21,5 +14,20 @@
   <a href="sawata://guardian-invites" style="display:inline-block; background:#2E7D6B; color:#FFFFFF; text-decoration:none; font-weight:bold; padding:14px 30px; border-radius:12px;">
     Open Sawatâ
   </a>
+  <script>
+    // Gmail (and most mail clients) strip non-http(s) hrefs from HTML
+    // email, so the guardian-invite email links here instead of directly
+    // to sawata://guardian-invites — this page bridges the gap. The
+    // attempt runs through a hidden iframe (after the visible content
+    // above has already painted) rather than navigating the page itself
+    // via location.replace, so a device without Sawatâ installed simply
+    // keeps showing this fallback instead of being left on a blank page.
+    window.addEventListener('load', function () {
+      var iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = 'sawata://guardian-invites';
+      document.body.appendChild(iframe);
+    });
+  </script>
 </body>
 </html>
