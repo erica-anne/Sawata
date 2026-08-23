@@ -42,6 +42,15 @@ class AppConfig {
   static const String guardianInviteEmailLink =
       'https://erica-anne.github.io/Sawata/guardian-invite.html';
 
+  /// [guardianInviteEmailLink] with a cache-busting query param appended,
+  /// so a distinct URL goes out with every send. Gmail routes clicked
+  /// links through its own link-scanning/caching layer, and GitHub Pages'
+  /// edge cache can also lag a fresh deploy — both are keyed on the exact
+  /// URL, so without this a guardian could still be served a stale
+  /// snapshot of the page even after it's been fixed and redeployed.
+  static String freshGuardianInviteEmailLink() =>
+      '$guardianInviteEmailLink?t=${DateTime.now().millisecondsSinceEpoch}';
+
   /// Support inbox shown in the footer of outbound emails.
   static const String supportEmail = 'support@sawata.app';
 }

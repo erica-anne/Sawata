@@ -203,7 +203,7 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
         toEmail: email,
         guardianName: name,
         userName: currentUser.displayName ?? 'A Sawata user',
-        appLink: AppConfig.guardianInviteEmailLink,
+        appLink: AppConfig.freshGuardianInviteEmailLink(),
       );
       if (!mounted) return;
       if (!result.success) {
@@ -272,7 +272,7 @@ class _AddGuardianScreenState extends State<AddGuardianScreen> {
         toEmail: email,
         guardianName: name,
         userName: currentUser?.displayName ?? 'A Sawata user',
-        appLink: AppConfig.guardianInviteEmailLink,
+        appLink: AppConfig.freshGuardianInviteEmailLink(),
       );
       if (!mounted) return;
       if (!result.success) {

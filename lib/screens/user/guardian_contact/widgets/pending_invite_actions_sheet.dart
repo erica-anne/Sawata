@@ -95,7 +95,7 @@ class _PendingInviteActionsContentState
         toEmail: widget.invite.email,
         guardianName: widget.invite.name,
         userName: currentUser?.displayName ?? 'A Sawata user',
-        appLink: AppConfig.guardianInviteEmailLink,
+        appLink: AppConfig.freshGuardianInviteEmailLink(),
       );
       if (!mounted) return;
       if (!result.success) {
